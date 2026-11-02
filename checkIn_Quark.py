@@ -32,9 +32,28 @@ class QuarkAPIError(RuntimeError):
 
 
 def send(title: str, message: str) -> None:
-    """Print a notification-compatible summary."""
+    """Print the summary and push it to ServerChan when configured."""
 
     print(f"{title}:\n{message}")
+
+    send_key = os.getenv("SENDKEY")
+    if not send_key:
+        return
+
+    try:
+        response = requests.post(
+            f"https://sctapi.ftqq.com/{send_key}.send",
+            data={"title": title, "desp": message},
+            timeout=15,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if payload.get("code") == 0:
+            print("✅ ServerChan 推送成功")
+        else:
+            print(f"⚠️ ServerChan 推送失败：{payload.get('message') or payload}")
+    except Exception as exc:
+        print(f"⚠️ ServerChan 推送失败：{type(exc).__name__}: {exc}")
 
 
 def split_account_entries(raw_value: str | None) -> list[str]:
