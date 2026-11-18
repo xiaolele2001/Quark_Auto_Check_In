@@ -56,6 +56,18 @@ def send(title: str, message: str) -> None:
         print(f"⚠️ ServerChan 推送失败：{type(exc).__name__}: {exc}")
 
 
+def build_push_title(total: int, failures: int, reward: int) -> str:
+    """Build the push title; WeChat preview only shows this line."""
+
+    if failures == 0:
+        if reward > 0:
+            return f"✅ 夸克签到 {total}/{total} +{reward / 1024 / 1024:.0f}MB"
+        return "✅ 夸克签到 今日已签"
+    if failures == total:
+        return f"❌ 夸克签到失败 {failures}/{total}"
+    return f"⚠️ 夸克签到 {total - failures}/{total} 成功"
+
+
 def split_account_entries(raw_value: str | None) -> list[str]:
     """Split COOKIE_QUARK into non-empty account entries."""
 
@@ -207,6 +219,7 @@ class Quark:
         return data["sign_daily_reward"]
 
     def do_sign(self) -> str:
+        self.last_reward = 0
         growth_info = self.get_growth_info()
         cap_sign = growth_info.get("cap_sign")
         if not isinstance(cap_sign, dict):
@@ -246,6 +259,7 @@ class Quark:
                 lines.append("✅ 复查确认今日已签到")
                 return "\n".join(lines)
             next_progress = progress + 1 if isinstance(progress, int) else "?"
+            self.last_reward = reward or 0
             lines.append(
                 f"✅ 签到成功 +{self.convert_bytes(reward)}，"
                 f"连签进度（{next_progress}/{target}）"
@@ -274,13 +288,16 @@ def main(
     print(f"✅ 检测到共 {len(entries)} 个夸克账号\n")
     results: list[str] = []
     failures = 0
+    total_reward = 0
 
     for index, entry in enumerate(entries, start=1):
         heading = f"🙍🏻‍♂️ 第 {index} 个账号"
         try:
             account = parse_account(entry, index)
-            result = quark_factory(account).do_sign()
+            quark = quark_factory(account)
+            result = quark.do_sign()
             results.append(f"{heading}\n{result}")
+            total_reward += getattr(quark, "last_reward", 0) or 0
         except (ConfigError, QuarkAPIError, KeyError, TypeError, ValueError) as exc:
             failures += 1
             results.append(f"{heading}\n❌ {exc}")
@@ -289,7 +306,7 @@ def main(
             results.append(f"{heading}\n❌ 未知错误：{type(exc).__name__}")
 
     summary = "\n\n".join(results)
-    send("夸克自动签到", summary)
+    send(build_push_title(len(entries), failures, total_reward), summary)
     print(
         f"\n----------执行完毕：成功 {len(entries) - failures}，失败 {failures}----------"
     )
